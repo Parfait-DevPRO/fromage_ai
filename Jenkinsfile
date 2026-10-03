@@ -26,59 +26,68 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                powershell '''
-                    $ErrorActionPreference = 'Stop'
+stage('Build Docker Image') {
+    steps {
+        powershell '''
+            $ErrorActionPreference = 'Stop'
 
-                    docker build --pull `
-                      --tag "$env:DOCKERHUB_USER/$env:IMAGE_NAME:$env:IMAGE_TAG" `
-                      --tag "$env:DOCKERHUB_USER/$env:IMAGE_NAME:latest" .
+            $image = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):$($env:IMAGE_TAG)"
+            $latest = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):latest"
 
-                    if ($LASTEXITCODE -ne 0) {
-                        exit $LASTEXITCODE
-                    }
-                '''
+            Write-Host "Building image: $image"
+            Write-Host "Building image: $latest"
+
+            docker build --pull `
+              --tag $image `
+              --tag $latest .
+
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
             }
-        }
+        '''
+    }
+}
 
-        stage('Publish to Registry') {
-            steps {
-                withCredentials([string(
-                    credentialsId: env.DOCKERHUB_TOKEN_CREDENTIAL_ID,
-                    variable: 'DOCKERHUB_TOKEN'
-                )]) {
-                    powershell '''
-                        $ErrorActionPreference = 'Stop'
+    stage('Publish to Registry') {
+    steps {
+        withCredentials([string(
+            credentialsId: env.DOCKERHUB_TOKEN_CREDENTIAL_ID,
+            variable: 'DOCKERHUB_TOKEN'
+        )]) {
+            powershell '''
+                $ErrorActionPreference = 'Stop'
 
-                        $env:DOCKERHUB_TOKEN | docker login `
-                          --username $env:DOCKERHUB_USER --password-stdin
+                $image = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):$($env:IMAGE_TAG)"
+                $latest = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):latest"
 
-                        if ($LASTEXITCODE -ne 0) {
-                            exit $LASTEXITCODE
-                        }
+                Write-Host "Pushing image: $image"
+                Write-Host "Pushing image: $latest"
 
-                        docker push "$env:DOCKERHUB_USER/$env:IMAGE_NAME:$env:IMAGE_TAG"
+                $env:DOCKERHUB_TOKEN | docker login `
+                    --username $env:DOCKERHUB_USER `
+                    --password-stdin
 
-                        if ($LASTEXITCODE -ne 0) {
-                            exit $LASTEXITCODE
-                        }
-
-                        docker push "$env:DOCKERHUB_USER/$env:IMAGE_NAME:latest"
-
-                        if ($LASTEXITCODE -ne 0) {
-                            exit $LASTEXITCODE
-                        }
-
-                        docker logout
-
-                        if ($LASTEXITCODE -ne 0) {
-                            exit $LASTEXITCODE
-                        }
-                    '''
+                if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
                 }
-            }
+
+                docker push $image
+
+                if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
+                }
+
+                docker push $latest
+
+                if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
+                }
+
+                docker logout
+            '''
         }
+    }
+}
 
         stage('Deploy via Webhook') {
             steps {
