@@ -59,7 +59,7 @@ def render_login() -> bool:
                     try:
                         st.session_state.user = auth.sign_in(st.session_state.login_username, st.session_state.login_password)
                         return True
-                    except ValueError as exc:
+                    except (ValueError, RuntimeError) as exc:
                         st.error(str(exc))
                 st.caption("Mot de passe oublié ?")
                 st.markdown('<div class="auth-divider"></div>', unsafe_allow_html=True)
@@ -84,7 +84,7 @@ def render_login() -> bool:
                         try:
                             st.session_state.user = auth.sign_up(username, password)
                             return True
-                        except ValueError as exc:
+                        except (ValueError, RuntimeError) as exc:
                             st.error(str(exc))
                 if st.button("J’ai déjà un compte : me connecter", key="show_login", use_container_width=True):
                     st.session_state.auth_mode = "login"

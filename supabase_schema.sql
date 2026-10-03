@@ -40,3 +40,13 @@ create table if not exists public.analyses (
   model_version text not null,
   created_at timestamptz default now()
 );
+
+-- These tables are written by the Streamlit server with its server-only
+-- Supabase secret key. Do not expose user/account data to publishable clients.
+alter table public.users enable row level security;
+alter table public.conversations enable row level security;
+alter table public.messages enable row level security;
+alter table public.analyses enable row level security;
+
+revoke all on public.users, public.conversations, public.messages, public.analyses from anon, authenticated;
+grant all on public.users, public.conversations, public.messages, public.analyses to service_role;

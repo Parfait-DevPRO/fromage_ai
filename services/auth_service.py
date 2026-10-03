@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from config.settings import BASE_DIR, secret
+from config.supabase_client import get_supabase_client
 
 DATABASE_PATH = BASE_DIR / "data" / "cheese_ai.db"
 ITERATIONS = 310_000
@@ -22,9 +23,16 @@ class LocalUser:
 
 
 class AuthService:
-    def __init__(self, database_path: Path = DATABASE_PATH, remote_client=None):
+    def __init__(self, database_path: Path = DATABASE_PATH, remote_client=None, require_remote: bool = False):
         self.database_path = database_path
-        self.remote_client = remote_client if remote_client is not None else self._make_remote_client()
+        # Keep standalone/local AuthService use isolated. The web controller opts
+        # into mandatory Supabase explicitly, preventing accidental network calls.
+        self.remote_client = remote_client if remote_client is not None else (
+            self._make_remote_client() if require_remote else None
+        )
+        self.require_remote = require_remote
+        self.remote_configured = bool(secret("SUPABASE_URL") and secret("SUPABASE_KEY"))
+        self.remote_key = secret("SUPABASE_KEY")
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as conn:
             conn.execute("""create table if not exists local_users (
@@ -37,19 +45,18 @@ class AuthService:
 
     @staticmethod
     def _make_remote_client():
-        url, key = secret("SUPABASE_URL"), secret("SUPABASE_KEY")
-        if not url or not key:
-            return None
-        try:
-            from supabase import create_client
-            return create_client(url, key)
-        except Exception:
-            return None
+        return get_supabase_client()
 
     def _sync_user(self, user: LocalUser) -> None:
         """Mirror the local identity in Supabase; no password is ever uploaded."""
         if not self.remote_client:
+            if self.require_remote:
+                if not self.remote_configured:
+                    raise RuntimeError("Supabase n'est pas configuré. Renseignez SUPABASE_URL et SUPABASE_KEY dans .env ou les secrets Streamlit.")
+                raise RuntimeError("Le client Supabase n'a pas pu être initialisé. Vérifiez l'URL et la clé du projet.")
             return
+        if self.require_remote and self.remote_key.startswith("sb_publishable_"):
+            raise RuntimeError("L'application écrit dans Supabase depuis son serveur. Utilisez une clé secrète sb_secret_ dans les secrets Streamlit, pas la clé publishable.")
         try:
             self.remote_client.table("users").upsert(
                 {"id": user.id, "username": user.username, "display_name": user.username},

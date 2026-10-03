@@ -12,6 +12,14 @@ except ModuleNotFoundError:
 BASE_DIR = Path(__file__).resolve().parent.parent
 ML_DIR = BASE_DIR / "ml"
 
+# Streamlit Cloud supplies secrets through st.secrets. Locally, load ignored
+# .env values so `streamlit run app.py` sees the same configuration.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env", override=False)
+except ImportError:
+    pass
+
 
 def resolve_model_path() -> Path:
     """Use the conventional filename or the single model supplied in ml/."""
