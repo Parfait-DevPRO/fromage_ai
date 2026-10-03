@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+.streamlit/secrets.toml
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+tests/
+data/*
+ml/*.keras
+ml/*.h5
