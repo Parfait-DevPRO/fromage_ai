@@ -52,26 +52,26 @@ class AuthService:
         if not self.remote_client:
             if self.require_remote:
                 if not self.remote_configured:
-                    raise RuntimeError("Supabase n'est pas configuré. Renseignez SUPABASE_URL et SUPABASE_KEY dans .env ou les secrets Streamlit.")
-                raise RuntimeError("Le client Supabase n'a pas pu être initialisé. Vérifiez l'URL et la clé du projet.")
+                    raise RuntimeError("Supabase n'est pas configurÃ©. Renseignez SUPABASE_URL et SUPABASE_KEY dans .env ou les secrets Streamlit.")
+                raise RuntimeError("Le client Supabase n'a pas pu Ãªtre initialisÃ©. VÃ©rifiez l'URL et la clÃ© du projet.")
             return
         if self.require_remote and self.remote_key.startswith("sb_publishable_"):
-            raise RuntimeError("L'application écrit dans Supabase depuis son serveur. Utilisez une clé secrète sb_secret_ dans les secrets Streamlit, pas la clé publishable.")
+            raise RuntimeError("SUPABASE_KEY contient une cle publishable. Remplacez-la par la cle serveur sb_secret_ dans Streamlit Cloud > Manage app > Settings > Secrets. En local, mettez-la dans .streamlit/secrets.toml ou .env; verifiez aussi .streamlit/secrets.toml, qui peut etre prioritaire au lancement Streamlit.")
         try:
             self.remote_client.table("users").upsert(
                 {"id": user.id, "username": user.username, "display_name": user.username},
                 on_conflict="id",
             ).execute()
         except Exception as exc:
-            raise RuntimeError("Impossible d'enregistrer le compte dans Supabase. Vérifiez SUPABASE_URL, SUPABASE_KEY et le script SQL.") from exc
+            raise RuntimeError("Impossible d'enregistrer le compte dans Supabase. VÃ©rifiez SUPABASE_URL, SUPABASE_KEY et le script SQL.") from exc
 
     @staticmethod
     def _validate(username: str, password: str) -> tuple[str, str]:
         username = username.strip()
         if not 3 <= len(username) <= 30 or not all(c.isalnum() or c in "_.-" for c in username):
-            raise ValueError("Le nom d'utilisateur doit avoir 3 à 30 caractères (lettres, chiffres, _, . ou -).")
+            raise ValueError("Le nom d'utilisateur doit avoir 3 Ã  30 caractÃ¨res (lettres, chiffres, _, . ou -).")
         if len(password) < 8:
-            raise ValueError("Le mot de passe doit contenir au moins 8 caractères.")
+            raise ValueError("Le mot de passe doit contenir au moins 8 caractÃ¨res.")
         return username, password
 
     @staticmethod
@@ -97,7 +97,7 @@ class AuthService:
                 conn.execute("insert into local_users (id, username, password_hash) values (?, ?, ?)",
                              (user.id, username, self._hash(password)))
         except sqlite3.IntegrityError as exc:
-            raise ValueError("Ce nom d'utilisateur existe déjà.") from exc
+            raise ValueError("Ce nom d'utilisateur existe dÃ©jÃ .") from exc
         try:
             self._sync_user(user)
         except RuntimeError:

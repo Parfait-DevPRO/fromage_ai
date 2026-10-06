@@ -1,6 +1,7 @@
 from __future__ import annotations
 import streamlit as st
 from views.brand_icon import icon_html
+from views.components.analysis_card import render_analysis
 
 
 def render_message(message: dict) -> None:
@@ -20,3 +21,7 @@ def render_message(message: dict) -> None:
             st.image(message["image"], width=260)
         if message.get("content"):
             st.markdown(message["content"])
+        if message.get("analysis"):
+            render_analysis(message["analysis"])
+        elif message.get("has_image"):
+            st.caption("Image jointe à ce message (l’image elle-même n’est pas archivée).")

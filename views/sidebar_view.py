@@ -10,10 +10,16 @@ def render_sidebar(conversations: list[dict], active_id: str):
         new = st.button("＋  Nouvelle conversation", type="primary", use_container_width=True)
         st.caption("RÉCENT")
         selected = active_id
+        delete_id = None
         for conversation in conversations:
             label = ("●  " if conversation["id"] == active_id else "◦  ") + conversation["title"]
-            if st.button(label, key="conv_" + conversation["id"], use_container_width=True):
-                selected = conversation["id"]
+            title_col, delete_col = st.columns([0.84, 0.16], vertical_alignment="center")
+            with title_col:
+                if st.button(label, key="conv_" + conversation["id"], use_container_width=True):
+                    selected = conversation["id"]
+            with delete_col:
+                if st.button("×", key="delete_" + conversation["id"], help="Supprimer cette conversation"):
+                    delete_id = conversation["id"]
         st.divider()
         st.caption("À PROPOS")
         st.caption("Assistant de découverte et d’analyse des fromages.")
@@ -23,4 +29,4 @@ def render_sidebar(conversations: list[dict], active_id: str):
         if user:
             st.caption(f"Connecté : {getattr(user, 'username', 'utilisateur')}")
         logout = st.button("Se déconnecter", key="logout", use_container_width=True)
-        return new, selected, logout
+        return new, selected, logout, delete_id
