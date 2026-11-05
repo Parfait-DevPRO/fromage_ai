@@ -1,117 +1,221 @@
-"""Local username/password authentication, without e-mail, OTP or Google."""
+"""Supabase-native authentication service (Zero SQLite).
+
+All user credentials, authentication tokens, and profile records are handled
+exclusively through Supabase Auth (bcrypt) and the Supabase `public.users` table.
+"""
 from __future__ import annotations
 
-import hashlib
-import hmac
-import os
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
-from uuid import uuid4
+from typing import Any
+import requests
 
-from config.settings import BASE_DIR, secret
-from config.supabase_client import get_supabase_client
-
-DATABASE_PATH = BASE_DIR / "data" / "cheese_ai.db"
-ITERATIONS = 310_000
+from config.settings import secret
+from config.supabase_client import get_supabase_client, clean_supabase_url, clean_supabase_key
 
 
 @dataclass
 class LocalUser:
     id: str
     username: str
+    display_name: str | None = None
+
+    def __post_init__(self):
+        if not self.display_name:
+            self.display_name = self.username
 
 
 class AuthService:
-    def __init__(self, database_path: Path = DATABASE_PATH, remote_client=None, require_remote: bool = False):
-        self.database_path = database_path
-        # Keep standalone/local AuthService use isolated. The web controller opts
-        # into mandatory Supabase explicitly, preventing accidental network calls.
-        self.remote_client = remote_client if remote_client is not None else (
-            self._make_remote_client() if require_remote else None
-        )
-        self.require_remote = require_remote
-        self.remote_configured = bool(secret("SUPABASE_URL") and secret("SUPABASE_KEY"))
-        self.remote_key = secret("SUPABASE_KEY")
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connection() as conn:
-            conn.execute("""create table if not exists local_users (
-                id text primary key, username text unique not null collate nocase,
-                password_hash text not null, created_at text default current_timestamp
-            )""")
-
-    def _connection(self):
-        return sqlite3.connect(self.database_path)
+    def __init__(self, *args, remote_client=None, require_remote: bool = True, **kwargs):
+        self.client = remote_client or get_supabase_client()
+        self.url = clean_supabase_url(secret("SUPABASE_URL"))
+        self.key = clean_supabase_key(secret("SUPABASE_KEY"))
+        if not self.url or not self.key or not self.client:
+            raise RuntimeError(
+                "Supabase n'est pas configuré. Veuillez vérifier SUPABASE_URL et SUPABASE_KEY dans .env ou .streamlit/secrets.toml."
+            )
+        self.headers = {
+            "apikey": self.key,
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
 
     @staticmethod
-    def _make_remote_client():
-        return get_supabase_client()
-
-    def _sync_user(self, user: LocalUser) -> None:
-        """Mirror the local identity in Supabase; no password is ever uploaded."""
-        if not self.remote_client:
-            if self.require_remote:
-                if not self.remote_configured:
-                    raise RuntimeError("Supabase n'est pas configurÃ©. Renseignez SUPABASE_URL et SUPABASE_KEY dans .env ou les secrets Streamlit.")
-                raise RuntimeError("Le client Supabase n'a pas pu Ãªtre initialisÃ©. VÃ©rifiez l'URL et la clÃ© du projet.")
-            return
-        if self.require_remote and self.remote_key.startswith("sb_publishable_"):
-            raise RuntimeError("SUPABASE_KEY contient une cle publishable. Remplacez-la par la cle serveur sb_secret_ dans Streamlit Cloud > Manage app > Settings > Secrets. En local, mettez-la dans .streamlit/secrets.toml ou .env; verifiez aussi .streamlit/secrets.toml, qui peut etre prioritaire au lancement Streamlit.")
-        try:
-            self.remote_client.table("users").upsert(
-                {"id": user.id, "username": user.username, "display_name": user.username},
-                on_conflict="id",
-            ).execute()
-        except Exception as exc:
-            raise RuntimeError("Impossible d'enregistrer le compte dans Supabase. VÃ©rifiez SUPABASE_URL, SUPABASE_KEY et le script SQL.") from exc
+    def _to_email(username_or_email: str) -> str:
+        s = username_or_email.strip().lower()
+        if "@" in s:
+            return s
+        return f"{s}@fromazy.app"
 
     @staticmethod
     def _validate(username: str, password: str) -> tuple[str, str]:
         username = username.strip()
         if not 3 <= len(username) <= 30 or not all(c.isalnum() or c in "_.-" for c in username):
-            raise ValueError("Le nom d'utilisateur doit avoir 3 Ã  30 caractÃ¨res (lettres, chiffres, _, . ou -).")
-        if len(password) < 8:
-            raise ValueError("Le mot de passe doit contenir au moins 8 caractÃ¨res.")
+            raise ValueError("Le nom d'utilisateur doit avoir 3 à 30 caractères (lettres, chiffres, _, . ou -).")
+        if len(password) < 6:
+            raise ValueError("Le mot de passe doit contenir au moins 6 caractères.")
         return username, password
 
-    @staticmethod
-    def _hash(password: str, salt: bytes | None = None) -> str:
-        salt = salt or os.urandom(16)
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, ITERATIONS)
-        return f"{salt.hex()}${digest.hex()}"
-
-    @staticmethod
-    def _matches(password: str, stored: str) -> bool:
-        try:
-            salt_hex, expected = stored.split("$", 1)
-            actual = AuthService._hash(password, bytes.fromhex(salt_hex)).split("$", 1)[1]
-            return hmac.compare_digest(actual, expected)
-        except (ValueError, AttributeError):
-            return False
-
-    def sign_up(self, username: str, password: str) -> LocalUser:
+    def sign_up(self, username: str, password: str, display_name: str | None = None) -> LocalUser:
+        """Create a user account natively in Supabase Auth and public.users."""
         username, password = self._validate(username, password)
-        user = LocalUser(str(uuid4()), username)
+        display_name = (display_name or username).strip()
+
+        # 1. Check if username is already taken in public.users
         try:
-            with self._connection() as conn:
-                conn.execute("insert into local_users (id, username, password_hash) values (?, ?, ?)",
-                             (user.id, username, self._hash(password)))
-        except sqlite3.IntegrityError as exc:
-            raise ValueError("Ce nom d'utilisateur existe dÃ©jÃ .") from exc
-        try:
-            self._sync_user(user)
-        except RuntimeError:
-            with self._connection() as conn:
-                conn.execute("delete from local_users where id = ?", (user.id,))
+            existing = self.client.table("users").select("id").ilike("username", username).execute()
+            if existing and existing.data and len(existing.data) > 0:
+                raise ValueError("Ce nom d'utilisateur est déjà utilisé. Veuillez en choisir un autre.")
+        except ValueError:
             raise
-        return user
+        except Exception as exc:
+            raise RuntimeError(f"Impossible de vérifier l'utilisateur dans Supabase: {exc}") from exc
+
+        # 2. Register user in Supabase Auth via Admin API
+        email = self._to_email(username)
+        admin_url = f"{self.url}/auth/v1/admin/users"
+        payload = {
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {
+                "username": username,
+                "display_name": display_name,
+            },
+        }
+
+        try:
+            resp = requests.post(admin_url, json=payload, headers=self.headers, timeout=12)
+        except Exception as exc:
+            raise RuntimeError(f"Impossible de joindre le serveur Supabase: {exc}") from exc
+
+        user_id = None
+        if resp.status_code in (200, 201):
+            user_data = resp.json()
+            user_id = user_data.get("id")
+        elif resp.status_code == 422:
+            # Email exists in auth.users. Check if it's an orphan or update it
+            try:
+                list_res = requests.get(admin_url, headers=self.headers, timeout=10)
+                if list_res.status_code == 200:
+                    for u in list_res.json().get("users", []):
+                        if u.get("email") == email:
+                            # Update existing auth user password
+                            user_id = u.get("id")
+                            requests.put(
+                                f"{admin_url}/{user_id}",
+                                json={"password": password, "user_metadata": {"username": username, "display_name": display_name}},
+                                headers=self.headers,
+                                timeout=10,
+                            )
+                            break
+            except Exception:
+                pass
+            if not user_id:
+                raise ValueError("Ce nom d'utilisateur ou cet e-mail est déjà utilisé.")
+        else:
+            err_msg = resp.text
+            try:
+                err_data = resp.json()
+                err_msg = err_data.get("msg") or err_data.get("message") or err_msg
+            except Exception:
+                pass
+            raise RuntimeError(f"Erreur d'inscription Supabase : {err_msg}")
+
+        # 3. Create or update profile in public.users
+        try:
+            self.client.table("users").upsert(
+                {
+                    "id": user_id,
+                    "username": username,
+                    "display_name": display_name,
+                },
+                on_conflict="id",
+            ).execute()
+        except Exception as exc:
+            # Rollback auth user creation if public.users fails
+            try:
+                requests.delete(f"{admin_url}/{user_id}", headers=self.headers, timeout=5)
+            except Exception:
+                pass
+            raise RuntimeError(f"Impossible de synchroniser le profil dans public.users : {exc}") from exc
+
+        return LocalUser(id=user_id, username=username, display_name=display_name)
 
     def sign_in(self, username: str, password: str) -> LocalUser:
-        username, password = self._validate(username, password)
-        with self._connection() as conn:
-            row = conn.execute("select id, username, password_hash from local_users where username = ?", (username,)).fetchone()
-        if not row or not self._matches(password, row[2]):
-            raise ValueError("Nom d'utilisateur ou mot de passe incorrect.")
-        user = LocalUser(row[0], row[1])
-        self._sync_user(user)
-        return user
+        """Authenticate user natively via Supabase Auth and fetch profile from public.users."""
+        username = username.strip()
+        if not username or not password:
+            raise ValueError("Veuillez renseigner un nom d'utilisateur et un mot de passe.")
+
+        email = self._to_email(username)
+        login_url = f"{self.url}/auth/v1/token?grant_type=password"
+
+        try:
+            resp = requests.post(
+                login_url,
+                json={"email": email, "password": password},
+                headers=self.headers,
+                timeout=12,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Impossible de joindre le serveur Supabase : {exc}") from exc
+
+        if resp.status_code == 200:
+            auth_data = resp.json()
+            user_info = auth_data.get("user", {})
+            user_id = user_info.get("id")
+
+            # Fetch user profile from public.users
+            try:
+                profile_res = self.client.table("users").select("*").eq("id", user_id).execute()
+                if profile_res and profile_res.data and len(profile_res.data) > 0:
+                    row = profile_res.data[0]
+                    return LocalUser(
+                        id=row["id"],
+                        username=row.get("username") or username,
+                        display_name=row.get("display_name") or username,
+                    )
+            except Exception:
+                pass
+
+            # Fallback if profile row is not yet in public.users
+            try:
+                self.client.table("users").upsert(
+                    {
+                        "id": user_id,
+                        "username": username,
+                        "display_name": username,
+                    },
+                    on_conflict="id",
+                ).execute()
+            except Exception:
+                pass
+            return LocalUser(id=user_id, username=username, display_name=username)
+
+        # In case the user signed up with an actual email that is stored in user_metadata or public.users
+        try:
+            user_search = self.client.table("users").select("id,username,display_name").ilike("username", username).execute()
+            if user_search and user_search.data and len(user_search.data) > 0:
+                uid = user_search.data[0]["id"]
+                admin_res = requests.get(f"{self.url}/auth/v1/admin/users/{uid}", headers=self.headers, timeout=5)
+                if admin_res.status_code == 200:
+                    actual_email = admin_res.json().get("email")
+                    if actual_email and actual_email != email:
+                        retry_resp = requests.post(
+                            login_url,
+                            json={"email": actual_email, "password": password},
+                            headers=self.headers,
+                            timeout=12,
+                        )
+                        if retry_resp.status_code == 200:
+                            u_row = user_search.data[0]
+                            return LocalUser(
+                                id=u_row["id"],
+                                username=u_row.get("username") or username,
+                                display_name=u_row.get("display_name") or username,
+                            )
+        except Exception:
+            pass
+
+        raise ValueError("Nom d'utilisateur ou mot de passe incorrect.")

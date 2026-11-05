@@ -1,34 +1,33 @@
-from services.auth_service import AuthService
+from services.auth_service import AuthService, LocalUser
+from unittest.mock import patch, MagicMock
 
 
-def test_local_user_can_sign_up_and_sign_in(tmp_path):
-    auth = AuthService(tmp_path / "users.db")
-    created = auth.sign_up("henri", "motdepasse123")
-    signed_in = auth.sign_in("HENRI", "motdepasse123")
-    assert signed_in.id == created.id
-    assert signed_in.username == "henri"
+def test_auth_service_validate():
+    username, password = AuthService._validate("henri", "motdepasse123")
+    assert username == "henri"
+    assert password == "motdepasse123"
 
 
-class FakeTable:
-    def upsert(self, data, on_conflict):
-        self.data, self.conflict = data, on_conflict
-        return self
-
-    def execute(self):
-        return self
+def test_auth_service_to_email():
+    assert AuthService._to_email("henri") == "henri@fromazy.app"
+    assert AuthService._to_email("HENRI") == "henri@fromazy.app"
+    assert AuthService._to_email("test@example.com") == "test@example.com"
 
 
-class FakeSupabase:
-    def __init__(self):
-        self.users = FakeTable()
+def test_auth_service_sign_in_mock():
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"id": "test-uuid-123", "username": "alice", "display_name": "Alice"}
+    ]
 
-    def table(self, name):
-        assert name == "users"
-        return self.users
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "user": {"id": "test-uuid-123"}
+        }
 
-
-def test_new_user_is_synced_to_supabase(tmp_path):
-    remote = FakeSupabase()
-    user = AuthService(tmp_path / "users.db", remote_client=remote).sign_up("alice", "motdepasse123")
-    assert remote.users.data["id"] == user.id
-    assert remote.users.data["username"] == "alice"
+        auth = AuthService(remote_client=mock_client)
+        user = auth.sign_in("alice", "password123")
+        assert user.id == "test-uuid-123"
+        assert user.username == "alice"
+        assert user.display_name == "Alice"

@@ -72,7 +72,7 @@ def get_supabase_client(custom_url: str | None = None, custom_key: str | None = 
         # New sb_publishable_/sb_secret_ API keys are not JWTs and belong only
         # in `apikey`. Legacy anon/service_role JWTs also use Authorization.
         if not key.startswith(("sb_publishable_", "sb_secret_")):
-            headers["Authorization"] = f"Bearer {key}"
+            headers["Authorization"] = "Bearer " + key
         postgrest_client = SyncPostgrestClient(rest_url, headers=headers)
         return UnifiedSupabaseClient(postgrest_client, is_postgrest=True)
     except Exception:
@@ -121,7 +121,7 @@ def test_supabase_connection(custom_url: str | None = None, custom_key: str | No
         "Prefer": "return=representation",
     }
     if not key.startswith(("sb_publishable_", "sb_secret_")):
-        headers["Authorization"] = f"Bearer {key}"
+        headers["Authorization"] = "Bearer " + key
 
     try:
         resp = requests.get(f"{url}/rest/v1/users?select=id&limit=1", headers=headers, timeout=5)

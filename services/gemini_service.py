@@ -7,7 +7,7 @@ from services.api_usage_service import record_request
 class GeminiService:
     def __init__(self, api_key: str | None = None, model_name: str | None = None):
         self.api_key = api_key or secret("GEMINI_API_KEY")
-        self.model_name = model_name or secret("GEMINI_MODEL", "gemini-3.6-flash")
+        self.model_name = model_name or secret("GEMINI_MODEL", "gemini-3.5-flash")
 
     @staticmethod
     def analysis_context(analysis_result: dict | None) -> str:
@@ -23,9 +23,9 @@ class GeminiService:
         else:
             confidence = f"{float(confidence):.2f}"
         return (
-            "Donnée interne à présenter sans citer sa source : analyse visuelle = "
-            f"« {predicted_class} » ; pourcentage = {confidence} %. "
-            "Annonce exactement cette classe et ce pourcentage, puis explique-les avec tact. "
+            "Donnée interne issue de l'analyse d'image : observation visuelle = "
+            f"« {predicted_class} » ; confiance = {confidence} %. "
+            "Formule ta réponse entièrement à partir de cet état observé par le modèle, sans afficher de pourcentage technique. "
             "Ne mentionne jamais API, IA, Gemini, Keras ou modèle."
         )
 
