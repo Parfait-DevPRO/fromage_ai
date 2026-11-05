@@ -265,16 +265,16 @@ def render_login() -> bool:
                         <div><strong>Fromazy_AI</strong><span>Votre compagnon gourmand</span></div>
                     </div>
                     <div class="hero-copy">
-                        <p class="hero-kicker">Le fromage, autrement</p>
-                        <h1>Chaque fromage a son histoire.</h1>
-                        <p>Identifiez vos découvertes, comprenez leurs particularités et trouvez l'inspiration pour les savourer.</p>
+                        <p class="hero-kicker">Une IA dédiée au fromage</p>
+                        <h1>Évaluez la qualité de votre fromage.</h1>
+                        <p>Ajoutez une photo : Fromazy_AI estime sa qualité à partir de son apparence.</p>
                         <div class="hero-points">
-                            <div class="hero-point"><i>01</i> Des réponses adaptées à vos fromages</div>
-                            <div class="hero-point"><i>02</i> Une analyse simple, à partir d'une photo</div>
-                            <div class="hero-point"><i>03</i> Vos échanges réunis au même endroit</div>
+                            <div class="hero-point"><i>01</i> Une prédiction simple à partir d'une image</div>
+                            <div class="hero-point"><i>02</i> Un résultat pour vous guider</div>
+                            <div class="hero-point"><i>03</i> Vos analyses et échanges au même endroit</div>
                         </div>
                     </div>
-                    <div class="hero-note">Curieux de fromage ? Vous êtes au bon endroit.</div>
+                    <div class="hero-note">Une analyse visuelle ne garantit pas qu'un fromage est sûr à consommer.</div>
                 </section>
                 """,
                 unsafe_allow_html=True,
@@ -286,7 +286,7 @@ def render_login() -> bool:
                     st.markdown(
                         '<p class="auth-eyebrow">Bienvenue chez Fromazy_AI</p>'
                         '<h2>Ravi de vous revoir.</h2>'
-                        '<p class="auth-subtitle">Connectez-vous pour retrouver vos conversations et continuer vos découvertes.</p>',
+                        '<p class="auth-subtitle">Connectez-vous pour analyser vos fromages et retrouver vos échanges.</p>',
                         unsafe_allow_html=True,
                     )
                     with st.form("login_form"):
@@ -310,7 +310,7 @@ def render_login() -> bool:
                     st.markdown(
                         '<p class="auth-eyebrow">Un compte, de belles découvertes</p>'
                         '<h2>Créez votre espace.</h2>'
-                        '<p class="auth-subtitle">Quelques secondes suffisent pour commencer votre aventure fromagère.</p>',
+                        '<p class="auth-subtitle">Créez un compte pour obtenir des prédictions de qualité à partir de photos.</p>',
                         unsafe_allow_html=True,
                     )
                     with st.form("signup_form"):
